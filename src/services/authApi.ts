@@ -15,7 +15,7 @@ const USER_KEY = 'userData';
 
 class AuthApiService {
   private requestCache: Map<string, { data: any; timestamp: number }> = new Map();
-  private readonly CACHE_DURATION = 5000; // 5 seconds
+  private readonly CACHE_DURATION = 30000; // 30 seconds
 
   private getCachedData(key: string) {
     const cached = this.requestCache.get(key);
@@ -202,12 +202,23 @@ class AuthApiService {
     }
   }
 
+  private fetchPromises: Map<string, Promise<any>> = new Map();
+
   async getAccessRequests(): Promise<AccessRequestsResponse> {
+    const cacheKey = 'access-requests';
+
     // Check cache first
-    const cachedData = this.getCachedData('access-requests');
+    const cachedData = this.getCachedData(cacheKey);
     if (cachedData) {
       console.log('Using cached access requests data');
       return cachedData;
+    }
+
+    // Check if there's already a fetch in progress
+    const existingPromise = this.fetchPromises.get(cacheKey);
+    if (existingPromise) {
+      console.log('Using existing fetch promise');
+      return existingPromise;
     }
 
     console.log('Fetching access requests...');
@@ -215,27 +226,41 @@ class AuthApiService {
     console.log('Using token:', token ? 'Present' : 'Missing');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/requests`, {
-        method: 'GET',
-        headers: this.getAuthHeaders(),
-      });
+      // Create new fetch promise
+      const fetchPromise = (async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/api/auth/requests`, {
+            method: 'GET',
+            headers: this.getAuthHeaders(),
+          });
 
-      if (response.status === 401) {
-        // Token expired, clear storage
-        this.logout();
-        const data = {
-          success: false,
-          requests: []
-        };
-        this.setCachedData('access-requests', data);
-        return data;
-      }
-      const data = await response.json();
-      console.log('Access requests response:', data);
-      this.setCachedData('access-requests', data);
-      return data;
+          if (response.status === 401) {
+            // Token expired, clear storage
+            this.logout();
+            const data = {
+              success: false,
+              requests: []
+            };
+            this.setCachedData(cacheKey, data);
+            return data;
+          }
+
+          const data = await response.json();
+          console.log('Access requests response:', data);
+          this.setCachedData(cacheKey, data);
+          return data;
+        } finally {
+          // Clean up the promise reference
+          this.fetchPromises.delete(cacheKey);
+        }
+      })();
+
+      // Store the promise
+      this.fetchPromises.set(cacheKey, fetchPromise);
+      return fetchPromise;
     } catch (error) {
       console.error('Get access requests error:', error);
+      this.fetchPromises.delete(cacheKey);
       return {
         success: false,
         requests: []

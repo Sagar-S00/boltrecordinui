@@ -58,14 +58,23 @@ export const AdminDashboard: React.FC = () => {
     }
   }, [isAuthenticated, isAdmin]);
 
+  // Only fetch requests once when component mounts and auth is valid
   useEffect(() => {
-    console.log('Auth state:', { isAuthenticated, isAdmin, loading });
-    
-    if (isAuthenticated && isAdmin) {
-      console.log('Fetching requests...');
-      doFetchRequests();
-    }
-  }, [isAuthenticated, isAdmin, doFetchRequests]);
+    let mounted = true;
+
+    const initializeData = async () => {
+      if (mounted && isAuthenticated && isAdmin && !loading) {
+        console.log('Initial fetch of requests...');
+        await doFetchRequests();
+      }
+    };
+
+    initializeData();
+
+    return () => {
+      mounted = false;
+    };
+  }, []); // Empty dependency array to run only once
 
   // Handle auth state changes
   useEffect(() => {
